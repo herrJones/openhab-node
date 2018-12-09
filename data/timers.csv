@@ -1,0 +1,7 @@
+rowid;item;value;time;ma;di;wo;do;vr;za;zo;random;schema
+-1;GV_Licht_NachtLinks;1;07:20:00;1;1;1;1;1;0;0;300;werk
+-1;GV_Licht_NachtLinks;0;07:45:00;1;1;1;1;1;0;0;0;werk
+-1;GV_Licht_NachtRechts;1;07:20:00;1;1;1;1;1;0;0;300;werk
+-1;GV_Licht_NachtRechts;0;07:45:00;1;1;1;1;1;0;0;0;werk
+-1;GV_Licht_Slaapkamer;7;07:25:00;1;1;1;1;1;0;0;300;werk
+-1;GV_Licht_Slaapkamer;0;07:45:00;1;1;1;1;1;0;0;0;werk
