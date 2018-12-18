@@ -1,9 +1,5 @@
 var loki = require('lokijs');
-
 var moment = require('moment');
-
-
-
 
 var lokiDB = new loki("timer_data.json");
 var tmrRules = lokiDB.addCollection('rules');
@@ -49,9 +45,8 @@ function calculateNextTime (rule) {
       let randomSeconds = Math.floor(Math.random() * rule.random);
       tmrStart = tmrStart.add(randomSeconds, 'seconds');
     }
-   // console.log(rule.item.padEnd(25, ' ') 
-   //           + " - " + tmrStart.isoWeekday(nextDay).format('DD-MM-YYYY HH:mm:ss')
-   //           + " - " + tmrStart.isoWeekday(nextDay).format('X'));
+    console.log(rule.item.padEnd(25, ' ') 
+              + " - " + tmrStart.isoWeekday(nextDay).format('DD-MM-YYYY HH:mm:ss'));
     return tmrStart.isoWeekday(nextDay).unix();
 }
 
@@ -82,7 +77,7 @@ function initiateTimers() {
     }
   });
 
-  console.log('initial timers created');
+  console.log('timer rules processed and ready...');
   //setTimeout(processTimerQueue, 5000);
 
   return tmrQueue;
