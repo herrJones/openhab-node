@@ -66,9 +66,11 @@ function processJobQueue() {
   } else if (todoList[0].target == 'OPENHAB' && todoList[0].action == 'SET') {
     // set values in OpenHAB
     if (Array.isArray(todoList[0].data)) {
-
+      todoList[0].data.forEach(element => {
+        openhab.sendUpdate(element);
+      })
     } else {
-
+      openhab.sendUpdate(todoList[0].data)
     }
   } else if (todoList[0].target == 'BECKHOFF' && todoList[0].action == 'GET') {
     // get values from Beckhoff PLC

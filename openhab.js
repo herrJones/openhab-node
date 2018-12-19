@@ -113,8 +113,45 @@ function prepareOpenhabUpdate(filter) {
   */
 }
 
+function sendOpenhabUpdate (data) {
+  
+  let options = {
+    host: openhabIP, 
+    port: openhabPort,
+    path: "/rest/items/" + data.item + "/state",
+    method: "PUT",
+    headers:  {
+      'Content-Type': 'text/plain',
+      'Content-Length': data.value.length
+    }
+  }
+
+  let req = http.request(options, function(res) {
+    let result = '';
+
+    res.on('data', (chunk) => {
+      result += chunk;
+    }).on('error', (err) => {
+      console.log(data.item + "(ERROR) :" + err.stack);
+    }).on('end', () => {
+      if (result != "") {
+        console.log(data.item + " : " + result);
+      }
+    });
+  });
+
+  req.write(data.value);
+
+  req.on('error', (err) => {
+    console.error(data.item + "(ERROR) :" + err.stack);
+  });
+
+  req.end();
+}
+
 module.exports = {
-  ohItems : ohItems,
+  ohItems     : ohItems,
   getCategory : prepareBeckhoffRequest,
-  getUpdates : prepareOpenhabUpdate
+  getUpdates  : prepareOpenhabUpdate,
+  sendUpdate  : sendOpenhabUpdate
 }
