@@ -9,8 +9,9 @@ var csv = require('csvtojson');
 var timers = require('./timers');
 var openhab = require('./openhab');
 var beckhoff = require('./beckhoff');
-//var influx = require('./influxdb');
+var influx = require('./influxdb');
 
+const expressPort = 8100;
 
 moment().format();
 var app = express();
@@ -41,7 +42,7 @@ importCsvData(__dirname + "/data/timers.csv", timers.rules);
 
 
 function processJobQueue() {
-  setTimeout(processJobQueue, 250);
+  setTimeout(processJobQueue, 125);
 
   if (jobBusy) {
     // previous job is still running: come back next time
@@ -66,7 +67,7 @@ function processJobQueue() {
   } else if (todoList[0].target == 'OPENHAB' && todoList[0].action == 'SET') {
     // set values in OpenHAB
     if (Array.isArray(todoList[0].data)) {
-      todoList[0].data.forEach(element => {
+      (todoList[0].data).forEach(element => {
         openhab.sendUpdate(element);
       })
     } else {
@@ -82,18 +83,18 @@ function processJobQueue() {
           return;
         }
         data.forEach(element => {
-          let updItem = openhab.ohItems.find({ plc : { '$eq' : element.symname }});
+          let influxData = openhab.localUpdate(element, curTime);
 
-          console.log(element.symname + ' : ' + element.value);
-          if (updItem[0].value != element.value) {
-            updItem[0].value = element.value;
-            updItem[0].checktime = curTime;
-            updItem[0].changed = true;
+          if (influxData != '') {
+            let scheduleJob = {
+              'target'   : 'INFLUX',
+              'action'   : 'SET',
+              'database' : todoList[0].database,
+              'data'     : influx.prepareUpdate(influxData),
+              'isBusy'   : false
+            }
+            jobQueue.insertOne(scheduleJob);
           }
-          
-          updItem[0].symhandle = element.symhandle;
-          
-          openhab.ohItems.update(updItem[0]);
         });
       });
     } else {
@@ -102,14 +103,19 @@ function processJobQueue() {
           console.warn('GET PLC : ' + err);
           return;
         }
-        let updItem = openhab.ohItems.find({ plc : { '$eq' : data.symname }});
 
-        console.log(element.symname + ' : ' + element.value);
-        updItem[0].value = data.value;
-        updItem[0].symhandle = data.symhandle;
-        updItem[0].checktime = curTime;
+        let influxData = openhab.localUpdate(data, curTime);
 
-        openhab.ohItems.update(updItem[0]);
+        if (influxData != '') {
+          let scheduleJob = {
+            'target'   : 'INFLUX',
+            'action'   : 'SET',
+            'database' : todoList[0].database,
+            'data'     : influx.prepareUpdate(influxData),
+            'isBusy'   : false
+          }
+          jobQueue.insertOne(scheduleJob);
+        }
       });
     }
   } else if (todoList[0].target == 'BECKHOFF' && todoList[0].action == 'SET') {
@@ -124,13 +130,18 @@ function processJobQueue() {
         }
 
         data.forEach(element => {
-          let updItem = openhab.ohItems.find({ plc : { '$eq' : element.symname }});
+          let influxData = openhab.localUpdate(element, curTime);
 
-          updItem[0].value = element.value;
-          updItem[0].symhandle = element.symhandle;
-          updItem[0].checktime = curTime;
-  
-          openhab.ohItems.update(updItem[0]);
+          if (influxData != '') {
+            let scheduleJob = {
+              'target'   : 'INFLUX',
+              'action'   : 'SET',
+              'database' : todoList[0].database,
+              'data'     : influx.prepareUpdate(influxData),
+              'isBusy'   : false
+            }
+            jobQueue.insertOne(scheduleJob);
+          }
         });
 
       });
@@ -141,15 +152,26 @@ function processJobQueue() {
           console.warn('SET PLC : ' + err);
           return;
         }
-        let updItem = openhab.ohItems.find({ plc : { '$eq' : data.symname }});
+        let influxData = openhab.localUpdate(data, curTime);
 
-        updItem[0].value = data.value;
-        updItem[0].symhandle = data.symhandle;
-        updItem[0].checktime = curTime;
-
-        openhab.ohItems.update(updItem[0]);
+        if (influxData != '') {
+          let scheduleJob = {
+            'target'   : 'INFLUX',
+            'action'   : 'SET',
+            'database' : todoList[0].database,
+            'data'     : influx.prepareUpdate(influxData),
+            'isBusy'   : false
+          }
+          jobQueue.insertOne(scheduleJob);
+        }
       });
     }
+  } else if (todoList[0].target == 'INFLUX' && todoList[0].action == 'GET') {
+
+  } else if (todoList[0].target == 'INFLUX' && todoList[0].action == 'SET') {
+    //todoList[0].data.database = todoList[0].database;
+
+    influx.sendUpdate(todoList[0].database, todoList[0].data);
   }
 }
 
@@ -210,26 +232,29 @@ var check_5secs = schedule.scheduleJob('1-59/5 * * * * *', function() {
     //console.log("checking presence");
     
     let scheduleJob = {
-      'target' : 'BECKHOFF',
-      'action' : 'GET',
-      'data'   : openhab.getCategory("LICHT"),
-      'isBusy' : false
+      'target'   : 'BECKHOFF',
+      'action'   : 'GET',
+      'database' : 'openhab_db',
+      'data'     : openhab.getCategory("LICHT"),
+      'isBusy'   : false
     }
     jobQueue.insertOne(scheduleJob);
 
     scheduleJob = {
-      'target' : 'BECKHOFF',
-      'action' : 'GET',
-      'data'   : openhab.getCategory("ACCESS"),
-      'isBusy' : false
+      'target'   : 'BECKHOFF',
+      'action'   : 'GET',
+      'database' : 'openhab_db',
+      'data'     : openhab.getCategory("ACCESS"),
+      'isBusy'   : false
     }
     jobQueue.insertOne(scheduleJob);
 
     scheduleJob = {
-      'target' : 'BECKHOFF',
-      'action' : 'GET',
-      'data'   : openhab.getCategory("SCREENS"),
-      'isBusy' : false
+      'target'   : 'BECKHOFF',
+      'action'   : 'GET',
+      'database' : 'openhab_db',
+      'data'     : openhab.getCategory("SCREENS"),
+      'isBusy'   : false
     }
     jobQueue.insertOne(scheduleJob);
 
@@ -267,29 +292,92 @@ var check_1min = schedule.scheduleJob('1-59/1 * * * *', function() {
   //console.log("checking beckhoff sensors");  
   
   let scheduleJob = {
-    'target' : 'BECKHOFF',
-    'action' : 'GET',
-    'data'   : openhab.getCategory("TEMP"),
-    'isBusy' : false
+    'target'   : 'BECKHOFF',
+    'action'   : 'GET',
+    'database' : 'beckhoff_db',
+    'data'     : openhab.getCategory("TEMP"),
+    'isBusy'   : false
   }
   jobQueue.insertOne(scheduleJob);
   scheduleJob = {
-    'target' : 'BECKHOFF',
-    'action' : 'GET',
-    'data'   : openhab.getCategory("LIGHT"),
-    'isBusy' : false
+    'target'   : 'BECKHOFF',
+    'action'   : 'GET',
+    'database' : 'beckhoff_db',
+    'data'     : openhab.getCategory("LIGHT"),
+    'isBusy'   : false
   }
   jobQueue.insertOne(scheduleJob);
   scheduleJob = {
-    'target' : 'BECKHOFF',
-    'action' : 'GET',
-     'data'   : openhab.getCategory("WIND"),
-     'isBusy' : false
+    'target'   : 'BECKHOFF',
+    'action'   : 'GET',
+    'database' : 'beckhoff_db',
+    'data'     : openhab.getCategory("WIND"),
+    'isBusy'   : false
   }
   jobQueue.insertOne(scheduleJob);
 
   
     
+})
+
+/*
+ * EXPRESS calls
+ */
+function unhandledRequest(req, response, next){
+  response.status(400)
+    .json({ error: "unhandled request"})
+    .end();
+}
+app.use(unhandledRequest);
+
+app.get('/getValues', function(req, res) {
+  let catName = req.query.var;
+  
+  let outbound = [];
+
+  let checkVars = openhab.ohItems.find({ category : { '$eq' : catName }});
+
+  checkVars.forEach(element => {
+    let outItem = {
+      'item' : element.item,
+      'value': element.value
+    }
+    
+    outbound.push(outItem);
+  });
+
+  console.log(JSON.stringify(outbound));
+
+  res.status(200).json(outbound).end();
+})
+
+app.get('/updateValues', function(req, res) {
+
+})
+
+app.get('/setPlcValue', function(req,res) {
+  let itemName = req.query.var;
+  let itemValue = req.query.state;
+
+  console.log('express : ' + itemName + ' --> ' + itemValue);
+
+  let scheduleJob = {
+    'target'   : 'BECKHOFF',
+    'action'   : 'SET',
+    'database' : 'openhab_db',
+    'data'     : openhab.getItem(itemName, itemValue),
+    'isBusy'   : false
+  }
+  jobQueue.insertOne(scheduleJob);
+
+  res.status(200).json('update queued').end();
+})
+
+var server = app.listen(expressPort, function() {
+	var srvHost = server.address().address
+	var srvPort = server.address().port
+	
+	console.log("automation app listening at http://%s:%s", srvHost, srvPort);
 })
 
 // give everything time to settle in... 

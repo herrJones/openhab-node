@@ -24,7 +24,7 @@ var plcOptions = {
 function setPlcSymbol(varData, callback) {
   let myHandle = {}; 
   
-  switch (kind) {
+  switch (varData.bytelength) {
     case "BOOL":
       myHandle = {
         symname: plcName,
@@ -75,7 +75,7 @@ function setPlcSymbol(varData, callback) {
 
 function getPlcSymbol(varData, callback) {
 
-  switch (varData.kind) {
+  switch (varData.bytelength) {
     case "BOOL":
       varData.bytelength = ads.BOOL;
       break;
@@ -171,15 +171,15 @@ function getPlcSymbols(varData, callback) {
 
   for (var i = 0; i < varData.length; i++) {
 
-    switch (varData.kind) {
+    switch (varData[i].bytelength) {
       case "BOOL":
-      varData.bytelength = ads.BOOL;
+        varData[i].bytelength = ads.BOOL;
         break;
       case "INT":
-      varData.bytelength = ads.INT;
+        varData[i].bytelength = ads.INT;
         break;
       case "BYTE":
-      varData.bytelength = ads.BYTE;
+        varData[i].bytelength = ads.BYTE;
         break;
     }
   }

@@ -1,14 +1,16 @@
 var loki = require('lokijs');
 var http = require('http');
+var moment = require('moment');
 
 const openhabIP = "10.81.20.60";
 const openhabPort = 8080;
 
+moment().format();
 var lokiDB = new loki("openhab_data.json");
 var ohItems = lokiDB.addCollection('rules');
 
 
-function prepareBeckhoffRequest(category) {
+function prepareBeckhoffCategoryRequest(category) {
   let allData = ohItems.find({ 'category' : { '$eq' : category }});
   let handles = [];
 
@@ -17,13 +19,27 @@ function prepareBeckhoffRequest(category) {
       'symname'    : element.plc,
       //'symhandle'  : element.handle,
       'propname'   : 'value',
-      'bytelength' : 0
+      'bytelength' : element.kind
     };
 
     handles.push(handle);
   });
 
   return handles;  
+}
+
+function prepareBeckhoffItemRequest(item, value) {
+  let thisData = ohItems.find({ 'item' : { '$eq' : item }});
+
+  let handle = {
+    'symname'    : thisData.plc,
+    //'symhandle'  : element.handle,
+    'propname'   : 'value',
+    'value'      : value,
+    'bytelength' : thisData.kind
+  };
+
+  return handle;
 }
 
 function prepareOpenhabUpdate(filter) {
@@ -75,42 +91,10 @@ function prepareOpenhabUpdate(filter) {
     }
 
     ohUpdate.push(updItem);
-  })
-
-  /*
-  let options = {
-    host: openhabIP, 
-    port: openhabPort,
-    path: "/rest/items/" + ohItem + "/state",
-    method: "PUT",
-    headers:  {
-      'Content-Type': 'text/plain',
-      'Content-Length': body.length
-    }
-  }
-
-  let req = http.request(options, function(res) {
-    let result = '';
-
-    res.on('data', (chunk) => {
-      result += chunk;
-    }).on('error', (err) => {
-      console.log(data.item + "(ERROR) :" + err.stack);
-    }).on('end', () => {
-      if (result != "") {
-        console.log(data.item + " : " + result);
-      }
-    });
-  });
-  
-  req.write(body);
-
-  req.on('error', (err) => {
-    console.error(data.item + "(ERROR) :" + err.stack);
   });
 
-  req.end();
-  */
+  return ohUpdate;
+
 }
 
 function sendOpenhabUpdate (data) {
@@ -149,9 +133,64 @@ function sendOpenhabUpdate (data) {
   req.end();
 }
 
+function doLokiUpdate(plcData, curTime) {
+  let updItem = ohItems.find({ plc : { '$eq' : plcData.symname }});
+
+  let updValue = false;
+  let updHandle = false;
+
+  console.log(plcData.symname + ' : ' + plcData[0].value);
+  if (updItem[0].value != plcData[0].value) {
+    updItem[0].value = plcData[0].value;
+    updItem[0].checktime = curTime;
+    updItem[0].changed = true;
+
+    updValue = true;
+  }
+
+  // store a sample at least every 10min 
+  if ((curtime - updItem[0].checktime) >= 600) {
+    updItem[0].checktime = curTime;
+
+    updValue = true;
+  }
+     
+  // store whenever a handle to a plc object changes
+  if (updItem[0].symhandle != plcData.symhandle) {
+    updItem[0].symhandle = element.symhandle;
+
+    updHandle = true;
+  }
+  
+  // perform the update in the in-memory loki-db
+  ohItems.update(updItem[0]);
+ 
+  // if any update, pass back data to be stored in the influx database
+  if (updValue || updHandle) {
+    let influxData = {
+      'item'   : plcData.item,
+      'value'  : 0,
+      'handle' : 0
+    }
+
+    if (updValue) {
+      influxData.value = plcData.value;
+    }
+    if (updHandle) {
+      influxData.value = plcData.value;
+      influxData.handle = plcData.symhandle;
+    }
+    return influxData;
+  } else {
+    return "";
+  }
+}
+
 module.exports = {
   ohItems     : ohItems,
-  getCategory : prepareBeckhoffRequest,
+  getCategory : prepareBeckhoffCategoryRequest,
+  getItem     : prepareBeckhoffItemRequest,
   getUpdates  : prepareOpenhabUpdate,
-  sendUpdate  : sendOpenhabUpdate
+  sendUpdate  : sendOpenhabUpdate,
+  localUpdate : doLokiUpdate
 }
