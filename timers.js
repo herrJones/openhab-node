@@ -2,7 +2,7 @@ var loki = require('lokijs');
 var moment = require('moment');
 
 var lokiDB = new loki("timer_data.json");
-var tmrRules = lokiDB.addCollection('rules');
+var tmrRules = lokiDB.addCollection('rules', { indices : ['time'] });
 
 function calculateNextTime (rule) {
     let tmrStart = moment(rule.time, 'HH:mm:ss');

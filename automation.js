@@ -1,6 +1,6 @@
 var express = require('express');
 var bodyParser = require('body-parser');
-var http = require('http');
+//var http = require('http');
 var loki = require('lokijs');
 var schedule = require('node-schedule');
 var moment = require('moment');
@@ -19,7 +19,7 @@ app.use(bodyParser.urlencoded({ extended:false }));
 app.use(bodyParser.json());
 
 var lokiDB = new loki("automation_data.json");
-var jobQueue = lokiDB.addCollection('jobs');
+var jobQueue = lokiDB.addCollection('jobs', { indices : ['isBusy', 'time']});
 var tmrQueue = lokiDB.addCollection('timers');
 
 var jobBusy = false;
@@ -40,22 +40,24 @@ function importCsvData(csvFile, collectionName) {
 importCsvData(__dirname + "/data/openhab.csv", openhab.ohItems);
 importCsvData(__dirname + "/data/timers.csv", timers.rules);
 
-
 function processJobQueue() {
   setTimeout(processJobQueue, 125);
 
   if (jobBusy) {
     // previous job is still running: come back next time
+    //console.log('job still busy')
     return;
   }
 
   jobQueue.findAndRemove({ 'isBusy' : { '$eq' : true }});
 
-  let todoList = jobQueue.find({ 'isBusy' : { '$eq' : false }});
+  let todoList = jobQueue.find({ 'isBusy' : { '$eq' : false }}).sort();
 
   if (todoList.length == 0) {
     return;
   }
+  jobBusy = true;
+
   todoList[0].isBusy = true;
   jobQueue.update(todoList[0]);
 
@@ -73,13 +75,15 @@ function processJobQueue() {
     } else {
       openhab.sendUpdate(todoList[0].data)
     }
+    jobBusy = false;
   } else if (todoList[0].target == 'BECKHOFF' && todoList[0].action == 'GET') {
     // get values from Beckhoff PLC
     // todoList.data contains handle definition to use for beckhoff call
     if (Array.isArray(todoList[0].data)) {
-      beckhoff.getPlcSymbols(todoList[0].data, (err, data) => {
+      beckhoff.getPlcSymbols(todoList[0].data, function(err, data) {
         if (err) {
           console.warn('GET PLC : ' + err);
+          jobBusy = false;
           return;
         }
         data.forEach(element => {
@@ -89,6 +93,7 @@ function processJobQueue() {
             let scheduleJob = {
               'target'   : 'INFLUX',
               'action'   : 'SET',
+              'time'     : new Date().getTime(),
               'database' : todoList[0].database,
               'data'     : influx.prepareUpdate(influxData),
               'isBusy'   : false
@@ -96,11 +101,13 @@ function processJobQueue() {
             jobQueue.insertOne(scheduleJob);
           }
         });
+        jobBusy = false;
       });
     } else {
-      beckhoff.getPlcSymbol(todoList[0].data, (err, data) => {
+      beckhoff.getPlcSymbol(todoList[0].data, function (err, data)  {
         if (err) {
           console.warn('GET PLC : ' + err);
+          jobBusy = false;
           return;
         }
 
@@ -110,12 +117,14 @@ function processJobQueue() {
           let scheduleJob = {
             'target'   : 'INFLUX',
             'action'   : 'SET',
+            'time'     : new Date().getTime(),
             'database' : todoList[0].database,
             'data'     : influx.prepareUpdate(influxData),
             'isBusy'   : false
           }
           jobQueue.insertOne(scheduleJob);
         }
+        jobBusy = false;
       });
     }
   } else if (todoList[0].target == 'BECKHOFF' && todoList[0].action == 'SET') {
@@ -123,9 +132,10 @@ function processJobQueue() {
     // todoList.data contains handle definition to use for beckhoff call
 
     if (Array.isArray(todoList[0].data)) {
-      beckhoff.setPlcSymbols(todoList[0].data, (err, data) => {
+      beckhoff.setPlcSymbols(todoList[0].data, function (err, data) {
         if (err) {
           console.warn('SET PLC : ' + err);
+          jobBusy = false;
           return;
         }
 
@@ -136,6 +146,7 @@ function processJobQueue() {
             let scheduleJob = {
               'target'   : 'INFLUX',
               'action'   : 'SET',
+              'time'     : new Date().getTime(),
               'database' : todoList[0].database,
               'data'     : influx.prepareUpdate(influxData),
               'isBusy'   : false
@@ -143,10 +154,10 @@ function processJobQueue() {
             jobQueue.insertOne(scheduleJob);
           }
         });
-
+        jobBusy = false;
       });
     } else {
-      beckhoff.setPlcSymbol(todoList[0].data, (err, data) => {
+      beckhoff.setPlcSymbol(todoList[0].data, function (err, data) {
 
         if (err) {
           console.warn('SET PLC : ' + err);
@@ -158,12 +169,15 @@ function processJobQueue() {
           let scheduleJob = {
             'target'   : 'INFLUX',
             'action'   : 'SET',
+            'time'     : new Date().getTime(),
             'database' : todoList[0].database,
             'data'     : influx.prepareUpdate(influxData),
             'isBusy'   : false
           }
           jobQueue.insertOne(scheduleJob);
         }
+
+        jobBusy = false;
       });
     }
   } else if (todoList[0].target == 'INFLUX' && todoList[0].action == 'GET') {
@@ -171,7 +185,13 @@ function processJobQueue() {
   } else if (todoList[0].target == 'INFLUX' && todoList[0].action == 'SET') {
     //todoList[0].data.database = todoList[0].database;
 
-    influx.sendUpdate(todoList[0].database, todoList[0].data);
+  //  if (Array.isArray(todoList[0].data)) {
+  //
+  //  } else {
+      influx.sendUpdate(todoList[0].database, todoList[0].data);
+      jobBusy = false;
+  //  }
+    
   }
 }
 
@@ -191,7 +211,6 @@ function initTimerQueue() {
 }
 
 function processTimerQueue() {
-  //setTimeout(processTimerQueue, 5000);
 
   let curTime = moment().unix();
   let nextTime = moment().add(5, 'seconds').unix();
@@ -200,41 +219,49 @@ function processTimerQueue() {
 
   // something has to happen in the next 5sec ?
   if (actions.length > 0) {
-    let tmrRule = tmrRules.find({ 'rowid' : { '$eq' : action.ruleId }});
+    
 
-    //calc new time
-    action.time = calculateNextTime(tmrRule[0]);
-    // ... and update the queue with the new value
-    tmrQueue.update(action);
+    actions.forEach(action => {
+      let tmrRule = timers.rules.find({ 'rowid' : { '$eq' : action.ruleId }});
 
-    let symData = openhab.ohItems.find({ item : { '$eq' : todoList[0].item }});
-    let handle = {
-      'symname'    : symData.plc,
-      //'symhandle'  : symData.handle,
-      'propname'   : 'value',
-      'value'      : todoList[0].value,
-      'bytelength' : 0
-    };
-    // TODO : check if this rule belongs to an active schedule
-    let timerJob = {
-      'target' : 'BECKHOFF',
-      'action' : 'SET',
-      'data'   : handle,
-      'isBusy' : false
-    };
+      //calc new time
+      action.time = timers.calculateNextTime(tmrRule[0]);
+      // ... and update the queue with the new value
+      tmrQueue.update(action);
 
-    jobQueue.insertOne(timerJob);
+      let symData = openhab.ohItems.find({ item : { '$eq' : tmrRule[0].item }});
+      let handle = {
+        'symname'    : symData[0].plc,
+        //'symhandle'  : symData.handle,
+        'propname'   : 'value',
+        'value'      : tmrRule[0].value,
+        'bytelength' : symData[0].kind
+      };
+      // TODO : check if this rule belongs to an active schedule
+      let timerJob = {
+        'target' : 'BECKHOFF',
+        'action' : 'SET',
+        'database' : 'openhab_tst',
+        'time'   : new Date().getTime(),
+        'data'   : handle,
+        'isBusy' : false
+      };
+
+      jobQueue.insertOne(timerJob);
+    })
+    
   }
 }
 
 // every 5 seconds
 var check_5secs = schedule.scheduleJob('1-59/5 * * * * *', function() {
     //console.log("checking presence");
-    
+    let curTimeMilli = new Date().getTime();
     let scheduleJob = {
       'target'   : 'BECKHOFF',
       'action'   : 'GET',
-      'database' : 'openhab_db',
+      'time'     : curTimeMilli,
+      'database' : 'openhab_tst',
       'data'     : openhab.getCategory("LICHT"),
       'isBusy'   : false
     }
@@ -243,7 +270,8 @@ var check_5secs = schedule.scheduleJob('1-59/5 * * * * *', function() {
     scheduleJob = {
       'target'   : 'BECKHOFF',
       'action'   : 'GET',
-      'database' : 'openhab_db',
+      'time'     : curTimeMilli,
+      'database' : 'openhab_tst',
       'data'     : openhab.getCategory("ACCESS"),
       'isBusy'   : false
     }
@@ -252,7 +280,8 @@ var check_5secs = schedule.scheduleJob('1-59/5 * * * * *', function() {
     scheduleJob = {
       'target'   : 'BECKHOFF',
       'action'   : 'GET',
-      'database' : 'openhab_db',
+      'time'     : curTimeMilli,
+      'database' : 'openhab_tst',
       'data'     : openhab.getCategory("SCREENS"),
       'isBusy'   : false
     }
@@ -263,12 +292,17 @@ var check_5secs = schedule.scheduleJob('1-59/5 * * * * *', function() {
 
 // every 15 seconds
 var check_15secs = schedule.scheduleJob('3-59/15 * * * * *', function() {
+  let curTimeMilli = new Date().getTime();
+
+ // let allData = jobQueue.find();
+ // console.log('jobQueue length = ' + allData.length);
 
   let ohUpdates = openhab.getUpdates("'LICHT','ACCESS','SCREENS'");
   if (ohUpdates != "") {
     scheduleJob = {
       'target' : 'OPENHAB',
       'action' : 'SET',
+      'time'   : curTimeMilli,
       'data'   : ohUpdates,
       'isBusy' : false
     }
@@ -280,6 +314,7 @@ var check_15secs = schedule.scheduleJob('3-59/15 * * * * *', function() {
     scheduleJob = {
       'target' : 'OPENHAB',
       'action' : 'SET',
+      'time'   : curTimeMilli,
       'data'   : ohUpdates,
       'isBusy' : false
     }
@@ -290,11 +325,12 @@ var check_15secs = schedule.scheduleJob('3-59/15 * * * * *', function() {
 // every minute
 var check_1min = schedule.scheduleJob('1-59/1 * * * *', function() {
   //console.log("checking beckhoff sensors");  
-  
+  let curTimeMilli = new Date().getTime();
   let scheduleJob = {
     'target'   : 'BECKHOFF',
     'action'   : 'GET',
-    'database' : 'beckhoff_db',
+    'time'     : curTimeMilli,
+    'database' : 'beckhoff_tst',
     'data'     : openhab.getCategory("TEMP"),
     'isBusy'   : false
   }
@@ -302,7 +338,8 @@ var check_1min = schedule.scheduleJob('1-59/1 * * * *', function() {
   scheduleJob = {
     'target'   : 'BECKHOFF',
     'action'   : 'GET',
-    'database' : 'beckhoff_db',
+    'time'     : curTimeMilli,
+    'database' : 'beckhoff_tst',
     'data'     : openhab.getCategory("LIGHT"),
     'isBusy'   : false
   }
@@ -310,7 +347,8 @@ var check_1min = schedule.scheduleJob('1-59/1 * * * *', function() {
   scheduleJob = {
     'target'   : 'BECKHOFF',
     'action'   : 'GET',
-    'database' : 'beckhoff_db',
+    'time'     : curTimeMilli,
+    'database' : 'beckhoff_tst',
     'data'     : openhab.getCategory("WIND"),
     'isBusy'   : false
   }
@@ -370,12 +408,23 @@ app.get('/setPlcValue', function(req,res) {
   }
   jobQueue.insertOne(scheduleJob);
 
-  res.status(200).json('update queued').end();
+  res.status(200).json({ result : 'update queued' }).end();
+})
+
+app.get('/getJobQueue', function(req,res) {
+  //jobQueue.length
+  let allData = jobQueue.find();
+  let outbound = {
+    'length' : allData.length,
+    'data' : allData
+  }
+
+  res.status(200).json(outbound).end();
 })
 
 var server = app.listen(expressPort, function() {
-	var srvHost = server.address().address
-	var srvPort = server.address().port
+  var srvHost = server.address().address;
+	var srvPort = server.address().port;
 	
 	console.log("automation app listening at http://%s:%s", srvHost, srvPort);
 })
@@ -388,7 +437,9 @@ setTimeout(() => {
 
 function shutdown() {
   console.warn('exiting...');
+  jobBusy = false;
   check_5secs.cancel();
+  check_15secs.cancel();
   check_1min.cancel();
 
   jobQueue.clear()
@@ -398,7 +449,8 @@ function shutdown() {
 process.on('exit', shutdown);
 process.on('uncaughtException', (err) => {
   console.error('Caught exception:' + err);
-  shutdown();
+  jobBusy = false;
+ // shutdown();
 });
 process.on('SIGKILL', shutdown);
 process.on('SIGINT', shutdown);

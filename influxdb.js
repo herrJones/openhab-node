@@ -33,17 +33,25 @@ function sendInfluxUpdate(database, data) {
     });
   });
     
-  req.write(data);
-
   req.on('error', (err) => {
     console.error(data.item + "(ERROR) :" + err.stack);
   });
-  
+
+  req.write(data);
+
   req.end();
 }
 
 function prepareInfluxUpdate(data) {
-  
+  let result = '';
+
+  result = data.measure + ',item=' + data.item + ' value=' + data.value;
+
+  if (data.handle != 0) {
+    result += '\n' + data.measure + '_log,item=' + data.item + ' value=' + data.value + ',handle=' + data.handle;
+  }
+
+  return result;
 }
 
 module.exports = {

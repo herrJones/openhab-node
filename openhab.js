@@ -7,7 +7,7 @@ const openhabPort = 8080;
 
 moment().format();
 var lokiDB = new loki("openhab_data.json");
-var ohItems = lokiDB.addCollection('rules');
+var ohItems = lokiDB.addCollection('openhab', { indices : ['category'], unique: ['item'] });
 
 
 function prepareBeckhoffCategoryRequest(category) {
@@ -17,7 +17,7 @@ function prepareBeckhoffCategoryRequest(category) {
   allData.forEach(element => {
     let handle = {
       'symname'    : element.plc,
-      //'symhandle'  : element.handle,
+      'symhandle'  : element.handle,
       'propname'   : 'value',
       'bytelength' : element.kind
     };
@@ -33,7 +33,7 @@ function prepareBeckhoffItemRequest(item, value) {
 
   let handle = {
     'symname'    : thisData.plc,
-    //'symhandle'  : element.handle,
+    'symhandle'  : element.handle,
     'propname'   : 'value',
     'value'      : value,
     'bytelength' : thisData.kind
@@ -49,6 +49,7 @@ function prepareOpenhabUpdate(filter) {
   let unix10min = moment().add(10, 'minutes').unix();
 
   let allData = ohItems.find({ '$and' : [{ 'category' : { '$in' : filter }},
+                                         { 'openhab' : { '$eq' : 1 }},
                                { '$or' : [{ 'changed' : { '$eq' : true }},
                                           { 'checktime' : { '$gte' : unix10min }}]
                                 }]
@@ -69,13 +70,13 @@ function prepareOpenhabUpdate(filter) {
           }
         break;
       case "BYTE":
-        value = element.value;
+        value = element.value.toString();
         break;
       case "INT":
         if (element.category == "TEMP") {
-          value = element.value / 10;
+          value = (element.value / 10).toString();
         } else  {
-          value = element.value;
+          value = element.value.toString();
         }
         break;
     }
@@ -86,7 +87,7 @@ function prepareOpenhabUpdate(filter) {
     }
 
     if ((element.category == 'WIND') &&
-        (elment.item == 'avg')) {
+        (element.item == 'avg')) {
       updItem.item = 'GV_Wind_Buiten';
     }
 
@@ -110,6 +111,8 @@ function sendOpenhabUpdate (data) {
     }
   }
 
+//  console.log(JSON.stringify(options));
+
   let req = http.request(options, function(res) {
     let result = '';
 
@@ -124,11 +127,11 @@ function sendOpenhabUpdate (data) {
     });
   });
 
-  req.write(data.value);
-
   req.on('error', (err) => {
     console.error(data.item + "(ERROR) :" + err.stack);
   });
+
+  req.write(data.value);  
 
   req.end();
 }
@@ -139,9 +142,9 @@ function doLokiUpdate(plcData, curTime) {
   let updValue = false;
   let updHandle = false;
 
-  console.log(plcData.symname + ' : ' + plcData[0].value);
-  if (updItem[0].value != plcData[0].value) {
-    updItem[0].value = plcData[0].value;
+  //console.log(plcData.symname + ' : ' + plcData.value);
+  if (updItem[0].value != plcData.value) {
+    updItem[0].value = plcData.value;
     updItem[0].checktime = curTime;
     updItem[0].changed = true;
 
@@ -149,7 +152,7 @@ function doLokiUpdate(plcData, curTime) {
   }
 
   // store a sample at least every 10min 
-  if ((curtime - updItem[0].checktime) >= 600) {
+  if ((curTime - updItem[0].checktime) >= 600) {
     updItem[0].checktime = curTime;
 
     updValue = true;
@@ -157,7 +160,7 @@ function doLokiUpdate(plcData, curTime) {
      
   // store whenever a handle to a plc object changes
   if (updItem[0].symhandle != plcData.symhandle) {
-    updItem[0].symhandle = element.symhandle;
+    updItem[0].symhandle = plcData.symhandle;
 
     updHandle = true;
   }
@@ -168,9 +171,10 @@ function doLokiUpdate(plcData, curTime) {
   // if any update, pass back data to be stored in the influx database
   if (updValue || updHandle) {
     let influxData = {
-      'item'   : plcData.item,
-      'value'  : 0,
-      'handle' : 0
+      'measure' : updItem[0].influxdb,
+      'item'    : updItem[0].item,
+      'value'   : 0,
+      'handle'  : 0
     }
 
     if (updValue) {

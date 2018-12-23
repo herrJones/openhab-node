@@ -22,44 +22,26 @@ var plcOptions = {
 }
 
 function setPlcSymbol(varData, callback) {
-  let myHandle = {}; 
-  
+
   switch (varData.bytelength) {
     case "BOOL":
-      myHandle = {
-        symname: plcName,
-        bytelength: ads.BOOL,
-        propname: 'value',      
-        value: plcValue    
-      } 
+      varData.bytelength = ads.BOOL;
       break;
-
     case "INT":
-      myHandle = {
-        symname: plcName,
-        bytelength: ads.INT,
-        propname: 'value',      
-        value: plcValue    
-      } 
+      varData.bytelength = ads.INT;
       break;
-
     case "BYTE":
-      myHandle = {
-        symname: plcName,
-        bytelength: ads.BYTE,
-        propname: 'value',      
-        value: plcValue    
-      } 
+      varData.bytelength = ads.BYTE;
       break;
   }
 
   let client = ads.connect(plcOptions, function() {
 
-    this.write(myHandle, function(err) {
+    this.write(varData, function(err) {
       if (err) {
         console.log('write error: ' + err);
       }
-      this.read(myHandle, function(err, handle) {
+      this.read(varData, function(err, handle) {
         if (err) {
           console.log('read error' + err);
           return callback(err, "");
@@ -161,9 +143,7 @@ function setPlcSymbols(allNames, allKinds, allValues, callback) {
        })
      })
    })
-   function getPlcSymbol(varData, callback) {
-
-  }
+   
 }
  
 function getPlcSymbols(varData, callback) {
