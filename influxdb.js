@@ -44,7 +44,17 @@ function sendInfluxUpdate(database, data) {
 
 function prepareInfluxUpdate(data) {
   let result = '';
+  let tmpValue = '';
 
+//  if (data.kind == 'BOOL') {
+//    tmpValue = (data.value ? '1' : '0');
+//  } else if (data.kind == 'BOOL') {
+//    tmpValue = data.value;
+//  } else if (data.kind == 'INT') {
+//    tmpValue = data.value;
+//  }
+
+  //result = data.measure + ',item=' + data.item + ' value=' + data.value;
   result = data.measure + ',item=' + data.item + ' value=' + data.value;
 
   if (data.handle != 0) {
@@ -54,7 +64,39 @@ function prepareInfluxUpdate(data) {
   return result;
 }
 
+function getInfluxData(database, query, callback) {
+  
+  let options = {
+    host: influxIP, 
+    port: influxPort,
+    path: "/query?pretty=true&db=" + database + "&u=" + influxUser + "&p=" + influxPass + "&epoch=s&q=" + query,
+    method: "GET"
+  }
+
+  let req = http.request(options, function(res) {
+    let result = '';
+
+    res.on('data', (chunk) => {
+      result += chunk;
+    }).on('error', (err) => {
+     
+      console.log('error querying data: ' + err);
+      callback(err, null);
+    }).on('end', () => {
+
+      callback(null, result);
+    });
+  });
+
+  req.on('error', (err) => {
+    console.error(data.item + "(ERROR) :" + err.stack);
+  });
+
+  req.end();
+}
+
 module.exports = {
   sendUpdate : sendInfluxUpdate,
-  prepareUpdate : prepareInfluxUpdate
+  prepareUpdate : prepareInfluxUpdate,
+  getData : getInfluxData
 }

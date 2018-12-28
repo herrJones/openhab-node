@@ -90,48 +90,30 @@ function getPlcSymbol(varData, callback) {
   })
 }
 
-function setPlcSymbols(allNames, allKinds, allValues, callback) {
+function setPlcSymbols(varData, callback) {
  
-   let allHandles = [allNames.length];
-   
-   for (var i = 0; i < plcNames.length; i++) {
-     switch (allKinds[i]) {
-       case "BOOL":
-         allHandles[i] = {
-           symname: allNames[i],
-           bytelength: ads.BOOL,
-           propname: 'value',      
-           value: allValues[i]     
-         } 
-         break;
-   
-       case "INT":
-         allHandles[i] = {
-           symname: allNames[i],
-           bytelength: ads.INT,
-           propname: 'value',      
-           value: allValues[i]    
-         } 
-         break;
-   
-       case "BYTE":
-         allHandles[i] = {
-           symname: allNames[i],
-           bytelength: ads.BYTE,
-           propname: 'value',      
-           value: allValues[i]     
-         } 
-         break;
-     }
-   }
+  for (var i = 0; i < varData.length; i++) {
+
+    switch (varData[i].bytelength) {
+      case "BOOL":
+        varData[i].bytelength = ads.BOOL;
+        break;
+      case "INT":
+        varData[i].bytelength = ads.INT;
+        break;
+      case "BYTE":
+        varData[i].bytelength = ads.BYTE;
+        break;
+    }
+  }
  
    let client = ads.connect(plcOptions, function() {
  
-     this.multiWrite(allHandles, function(err) {
+     this.multiWrite(varData, function(err) {
        if (err) {
          console.log('write error: ' + err);
        }
-       this.multiRead(allHandles, function(err, handles) {
+       this.multiRead(varData, function(err, handles) {
          if (err) {
            console.log('read error' + err);
            return callback(err, "");
@@ -143,7 +125,6 @@ function setPlcSymbols(allNames, allKinds, allValues, callback) {
        })
      })
    })
-   
 }
  
 function getPlcSymbols(varData, callback) {

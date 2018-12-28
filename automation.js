@@ -19,8 +19,8 @@ app.use(bodyParser.urlencoded({ extended:false }));
 app.use(bodyParser.json());
 
 var lokiDB = new loki("automation_data.json");
-var jobQueue = lokiDB.addCollection('jobs', { indices : ['isBusy', 'time']});
-var tmrQueue = lokiDB.addCollection('timers');
+var jobQueue = lokiDB.addCollection('jobs', { indices : ['isBusy']});
+var tmrQueue = lokiDB.addCollection('timers', { indices : ['time']});
 
 var jobBusy = false;
 
@@ -93,7 +93,6 @@ function processJobQueue() {
             let scheduleJob = {
               'target'   : 'INFLUX',
               'action'   : 'SET',
-              'time'     : new Date().getTime(),
               'database' : todoList[0].database,
               'data'     : influx.prepareUpdate(influxData),
               'isBusy'   : false
@@ -117,7 +116,7 @@ function processJobQueue() {
           let scheduleJob = {
             'target'   : 'INFLUX',
             'action'   : 'SET',
-            'time'     : new Date().getTime(),
+            //'time'     : new Date().getTime(),
             'database' : todoList[0].database,
             'data'     : influx.prepareUpdate(influxData),
             'isBusy'   : false
@@ -143,10 +142,10 @@ function processJobQueue() {
           let influxData = openhab.localUpdate(element, curTime);
 
           if (influxData != '') {
+            
             let scheduleJob = {
               'target'   : 'INFLUX',
               'action'   : 'SET',
-              'time'     : new Date().getTime(),
               'database' : todoList[0].database,
               'data'     : influx.prepareUpdate(influxData),
               'isBusy'   : false
@@ -166,10 +165,12 @@ function processJobQueue() {
         let influxData = openhab.localUpdate(data, curTime);
 
         if (influxData != '') {
+
+
           let scheduleJob = {
             'target'   : 'INFLUX',
             'action'   : 'SET',
-            'time'     : new Date().getTime(),
+            //'time'     : new Date().getTime(),
             'database' : todoList[0].database,
             'data'     : influx.prepareUpdate(influxData),
             'isBusy'   : false
@@ -181,7 +182,7 @@ function processJobQueue() {
       });
     }
   } else if (todoList[0].target == 'INFLUX' && todoList[0].action == 'GET') {
-
+    //
   } else if (todoList[0].target == 'INFLUX' && todoList[0].action == 'SET') {
     //todoList[0].data.database = todoList[0].database;
 
@@ -229,6 +230,10 @@ function processTimerQueue() {
       // ... and update the queue with the new value
       tmrQueue.update(action);
 
+      if (!action.active) {
+        return;
+      }
+
       let symData = openhab.ohItems.find({ item : { '$eq' : tmrRule[0].item }});
       let handle = {
         'symname'    : symData[0].plc,
@@ -241,8 +246,8 @@ function processTimerQueue() {
       let timerJob = {
         'target' : 'BECKHOFF',
         'action' : 'SET',
-        'database' : 'openhab_tst',
-        'time'   : new Date().getTime(),
+        'database' : 'openhab_db',
+        //'time'   : new Date().getTime(),
         'data'   : handle,
         'isBusy' : false
       };
@@ -256,12 +261,10 @@ function processTimerQueue() {
 // every 5 seconds
 var check_5secs = schedule.scheduleJob('1-59/5 * * * * *', function() {
     //console.log("checking presence");
-    let curTimeMilli = new Date().getTime();
     let scheduleJob = {
       'target'   : 'BECKHOFF',
       'action'   : 'GET',
-      'time'     : curTimeMilli,
-      'database' : 'openhab_tst',
+      'database' : 'openhab_db',
       'data'     : openhab.getCategory("LICHT"),
       'isBusy'   : false
     }
@@ -270,8 +273,7 @@ var check_5secs = schedule.scheduleJob('1-59/5 * * * * *', function() {
     scheduleJob = {
       'target'   : 'BECKHOFF',
       'action'   : 'GET',
-      'time'     : curTimeMilli,
-      'database' : 'openhab_tst',
+      'database' : 'openhab_db',
       'data'     : openhab.getCategory("ACCESS"),
       'isBusy'   : false
     }
@@ -280,8 +282,7 @@ var check_5secs = schedule.scheduleJob('1-59/5 * * * * *', function() {
     scheduleJob = {
       'target'   : 'BECKHOFF',
       'action'   : 'GET',
-      'time'     : curTimeMilli,
-      'database' : 'openhab_tst',
+      'database' : 'openhab_db',
       'data'     : openhab.getCategory("SCREENS"),
       'isBusy'   : false
     }
@@ -292,45 +293,39 @@ var check_5secs = schedule.scheduleJob('1-59/5 * * * * *', function() {
 
 // every 15 seconds
 var check_15secs = schedule.scheduleJob('3-59/15 * * * * *', function() {
-  let curTimeMilli = new Date().getTime();
 
- // let allData = jobQueue.find();
- // console.log('jobQueue length = ' + allData.length);
-
-  let ohUpdates = openhab.getUpdates("'LICHT','ACCESS','SCREENS'");
+ // let ohUpdates = openhab.getUpdates("'LICHT','ACCESS','SCREENS'");
+  let ohUpdates = openhab.getUpdates("none");
   if (ohUpdates != "") {
     scheduleJob = {
       'target' : 'OPENHAB',
       'action' : 'SET',
-      'time'   : curTimeMilli,
       'data'   : ohUpdates,
       'isBusy' : false
     }
     jobQueue.insertOne(scheduleJob);
   }
 
-  ohUpdates = openhab.getUpdates("'TEMP','LIGHT','WIND'");
-  if (ohUpdates != "") {
-    scheduleJob = {
-      'target' : 'OPENHAB',
-      'action' : 'SET',
-      'time'   : curTimeMilli,
-      'data'   : ohUpdates,
-      'isBusy' : false
-    }
-    jobQueue.insertOne(scheduleJob);
-  }
+//  ohUpdates = openhab.getUpdates("'TEMP','LIGHT','WIND'");
+//  if (ohUpdates != "") {
+//    scheduleJob = {
+//      'target' : 'OPENHAB',
+//      'action' : 'SET',
+//      'data'   : ohUpdates,
+//      'isBusy' : false
+//    }
+//    jobQueue.insertOne(scheduleJob);
+//  }
 })
 
 // every minute
 var check_1min = schedule.scheduleJob('1-59/1 * * * *', function() {
   //console.log("checking beckhoff sensors");  
-  let curTimeMilli = new Date().getTime();
+
   let scheduleJob = {
     'target'   : 'BECKHOFF',
     'action'   : 'GET',
-    'time'     : curTimeMilli,
-    'database' : 'beckhoff_tst',
+    'database' : 'beckhoff_db',
     'data'     : openhab.getCategory("TEMP"),
     'isBusy'   : false
   }
@@ -338,8 +333,7 @@ var check_1min = schedule.scheduleJob('1-59/1 * * * *', function() {
   scheduleJob = {
     'target'   : 'BECKHOFF',
     'action'   : 'GET',
-    'time'     : curTimeMilli,
-    'database' : 'beckhoff_tst',
+    'database' : 'beckhoff_db',
     'data'     : openhab.getCategory("LIGHT"),
     'isBusy'   : false
   }
@@ -347,15 +341,12 @@ var check_1min = schedule.scheduleJob('1-59/1 * * * *', function() {
   scheduleJob = {
     'target'   : 'BECKHOFF',
     'action'   : 'GET',
-    'time'     : curTimeMilli,
-    'database' : 'beckhoff_tst',
+    'database' : 'beckhoff_db',
     'data'     : openhab.getCategory("WIND"),
     'isBusy'   : false
   }
   jobQueue.insertOne(scheduleJob);
 
-  
-    
 })
 
 /*
@@ -366,7 +357,6 @@ function unhandledRequest(req, response, next){
     .json({ error: "unhandled request"})
     .end();
 }
-app.use(unhandledRequest);
 
 app.get('/getValues', function(req, res) {
   let catName = req.query.var;
@@ -384,7 +374,7 @@ app.get('/getValues', function(req, res) {
     outbound.push(outItem);
   });
 
-  console.log(JSON.stringify(outbound));
+  console.log('WEB - getValues (' + catName + ')' + JSON.stringify(outbound));
 
   res.status(200).json(outbound).end();
 })
@@ -397,7 +387,25 @@ app.get('/setPlcValue', function(req,res) {
   let itemName = req.query.var;
   let itemValue = req.query.state;
 
-  console.log('express : ' + itemName + ' --> ' + itemValue);
+  console.log('WEB - setPlcValue : ' + itemName + ' --> ' + itemValue);
+
+  let scheduleJob = {
+    'target'   : 'BECKHOFF',
+    'action'   : 'SET',
+    'database' : 'openhab_db',
+    'data'     : openhab.getItem(itemName, itemValue),
+    'isBusy'   : false
+  }
+  jobQueue.insertOne(scheduleJob);
+
+  res.status(200).json({ result : 'update queued' }).end();
+})
+/*
+app.get('/setSwitch', function(req,res) {
+  let itemName = req.query.var;
+  let itemValue = req.query.state;
+
+  console.log('setSwitch : ' + itemName + ' --> ' + itemValue);
 
   let scheduleJob = {
     'target'   : 'BECKHOFF',
@@ -411,8 +419,63 @@ app.get('/setPlcValue', function(req,res) {
   res.status(200).json({ result : 'update queued' }).end();
 })
 
+app.get('/setDimmer', function(req,res) {
+  let itemName = req.query.var;
+  let itemValue = req.query.state;
+
+  console.log('setDimmer : ' + itemName + ' --> ' + itemValue);
+
+  let scheduleJob = {
+    'target'   : 'BECKHOFF',
+    'action'   : 'SET',
+    'database' : 'openhab_db',
+    'data'     : openhab.getItem(itemName, itemValue),
+    'isBusy'   : false
+  }
+  jobQueue.insertOne(scheduleJob);
+
+  res.status(200).json({ result : 'update queued' }).end();
+})
+
+app.get('/setScreenAuto', function(req,res) {
+  let itemName = req.query.var;
+  let itemValue = req.query.state;
+
+  console.log('setScreenAuto : ' + itemName + ' --> ' + itemValue);
+
+  let scheduleJob = {
+    'target'   : 'BECKHOFF',
+    'action'   : 'SET',
+    'database' : 'openhab_db',
+    'data'     : openhab.getItem(itemName, itemValue),
+    'isBusy'   : false
+  }
+  jobQueue.insertOne(scheduleJob);
+
+  res.status(200).json({ result : 'update queued' }).end();
+})
+
+app.get('/setScreenPos', function(req,res) {
+  let itemName = req.query.var;
+  let itemValue = req.query.state;
+
+  console.log('setScreenPos : ' + itemName + ' --> ' + itemValue);
+
+  let scheduleJob = {
+    'target'   : 'BECKHOFF',
+    'action'   : 'SET',
+    'database' : 'openhab_db',
+    'data'     : openhab.getItem(itemName, itemValue),
+    'isBusy'   : false
+  }
+  jobQueue.insertOne(scheduleJob);
+
+  res.status(200).json({ result : 'update queued' }).end();
+})
+*/
+
 app.get('/getJobQueue', function(req,res) {
-  //jobQueue.length
+
   let allData = jobQueue.find();
   let outbound = {
     'length' : allData.length,
@@ -422,6 +485,86 @@ app.get('/getJobQueue', function(req,res) {
   res.status(200).json(outbound).end();
 })
 
+app.get('/getGinlong', function(req,res) {
+  
+  let database = 'ginlong_db';
+  let query = 'SELECT%20e_total%2Ce_today%2Cserial%20FROM%20pv_data%20ORDER%20BY%20time%20DESC%20LIMIT%201'
+  let outbound = '';
+
+  influx.getData(database, query, function(err, data) {
+    
+    if (err) {
+      outbound = 'error detected: ' + err;
+    } else {
+      //console.log('getGinlong : ' + data);
+      let tmpData = JSON.parse(data);
+      outbound = {
+        'e_total' : tmpData.results[0].series[0].values[0][1],
+        'e_today' : tmpData.results[0].series[0].values[0][2],
+        'serial' : tmpData.results[0].series[0].values[0][3],
+        'time' : tmpData.results[0].series[0].values[0][0]
+      };
+
+      let logTime = moment.unix(tmpData.results[0].series[0].values[0][0]);
+      let difference = moment().diff(logTime, 'seconds');
+
+      //console.log('lastTime = ' + logTime.toString('') + ' - diff = ' + difference);
+      if (difference >= 3600) {
+        let e_today = 0;
+        if (logTime.isoWeekday() == moment().isoWeekday()) {
+          e_today = tmpData.results[0].series[0].values[0][2];
+        }
+
+        let influxData='pv_data,serial=' + tmpData.results[0].series[0].values[0][3] 
+          + ' temp=0.0' 
+          + ',vpv1=0.0,vpv2=0.0'  
+          + ',ipv1=0.0,ipv2=0.0'  
+          + ',iac1=0.0,iac2=0.0,iac3=0.0' 
+          + ',vac1=0.0,vac2=0.0,vac3=0.0' 
+          + ',fac=0.0,pac=0.0'  
+          + ',e_today='+ e_today.toFixed(1) + ',e_total=' + tmpData.results[0].series[0].values[0][1].toFixed(1)
+          + ',ppv=0.0';
+ 
+          let scheduleJob = {
+            'target'   : 'INFLUX',
+            'action'   : 'SET',
+            //'time'     : new Date().getTime(),
+            'database' : database,
+            'data'     : influxData,
+            'isBusy'   : false
+          }
+          jobQueue.insertOne(scheduleJob);
+        //sendInfluxUpdate('ginlong_db', influxData);
+      }
+    }
+    //console.log(JSON.stringify(data));
+    res.status(200).json(outbound).end();
+  });
+
+ // res.status(200).json(outbound).end();
+});
+
+app.get('/setTimerSchema', function(req,res) {
+  let schemaName = req.query.schema;
+  let schemaState = req.query.state;
+
+  if (schemaState == 1) {
+    console.log('enabling timer schema ' + schemaName);
+  } else {
+    console.log('disabling timer schema ' + schemaName);
+  }
+  let actions = tmrQueue.find({'schema' : { '$contains' : schemaName}});
+  
+  actions.forEach(element => {
+    element.active = (schemaState == 1 ? true : false);
+
+    tmrQueue.update(element);
+  })
+
+  res.status(200).json(actions).end(); 
+})
+
+app.use(unhandledRequest);
 var server = app.listen(expressPort, function() {
   var srvHost = server.address().address;
 	var srvPort = server.address().port;

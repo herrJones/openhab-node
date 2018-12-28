@@ -9,7 +9,7 @@ function calculateNextTime (rule) {
     let curDay = moment().isoWeekday();
       
     let nextDay = curDay + 1;
-    if (moment().isBefore(tmrStart)) {
+    if (moment().add(-2, 'seconds').isBefore(tmrStart)) {
       nextDay--;
     }
   
@@ -64,11 +64,12 @@ function initiateTimers() {
     try {
       let tmrAction = {
         'item'    : tmrRule.item,
-        //'kind'   : plcItem[0].kind,
         'time'   : calculateNextTime(tmrRule),
         'value'  : tmrRule.value,
         'schema' : tmrRule.schema,
-        'ruleId' : tmrRule.rowid
+        'ruleId' : tmrRule.rowid,
+        'active' : false
+        //'active' : (tmrRule.schema.includes('test') ? true : false)
       };
       tmrQueue.push(tmrAction); 
     }

@@ -9,7 +9,6 @@ moment().format();
 var lokiDB = new loki("openhab_data.json");
 var ohItems = lokiDB.addCollection('openhab', { indices : ['category'], unique: ['item'] });
 
-
 function prepareBeckhoffCategoryRequest(category) {
   let allData = ohItems.find({ 'category' : { '$eq' : category }});
   let handles = [];
@@ -17,7 +16,7 @@ function prepareBeckhoffCategoryRequest(category) {
   allData.forEach(element => {
     let handle = {
       'symname'    : element.plc,
-      'symhandle'  : element.handle,
+     // 'symhandle'  : element.handle,
       'propname'   : 'value',
       'bytelength' : element.kind
     };
@@ -32,11 +31,11 @@ function prepareBeckhoffItemRequest(item, value) {
   let thisData = ohItems.find({ 'item' : { '$eq' : item }});
 
   let handle = {
-    'symname'    : thisData.plc,
-    'symhandle'  : element.handle,
+    'symname'    : thisData[0].plc,
+    //'symhandle'  : thisData.handle,
     'propname'   : 'value',
     'value'      : value,
-    'bytelength' : thisData.kind
+    'bytelength' : thisData[0].kind
   };
 
   return handle;
@@ -46,14 +45,13 @@ function prepareOpenhabUpdate(filter) {
   let ohUpdate = [];
 
   //let allData = ohItems.find({ 'category' : { '$in' : filter }});
-  let unix10min = moment().add(10, 'minutes').unix();
+  let unix10min = moment().add(-10, 'minutes').unix();
 
-  let allData = ohItems.find({ '$and' : [{ 'category' : { '$in' : filter }},
-                                         { 'openhab' : { '$eq' : 1 }},
-                               { '$or' : [{ 'changed' : { '$eq' : true }},
-                                          { 'checktime' : { '$gte' : unix10min }}]
-                                }]
-                              });
+ // let allData = ohItems.find({ '$and' : [{ 'category' : { '$in' : filter }}, { 'openhab' : { '$eq' : 1 }},
+ //                                        { '$or' : [{ 'changed' : { '$eq' : 1 }},  { 'checktime' : { '$gte' : unix10min }}]}
+ //                                       ]
+ //                             });
+  let allData = ohItems.find({ 'openhab' : { '$eq' : '1' }});
   
   if (allData.length == 0) {
     return "";
@@ -61,13 +59,17 @@ function prepareOpenhabUpdate(filter) {
 
   allData.forEach(element => {
     let value = '';
+
+    if ((element.changed == '0') && (element.checktime > unix10min)) {
+      return;
+    }
     switch (element.kind) {
       case "BOOL":
-          if (element.category == "ACCESS") {
-            value = (element.value ? "CLOSED" : "OPEN" );
-          } else {
-            value = (element.value ? "ON" : "OFF" );
-          }
+        if (element.category == "ACCESS") {
+          value = (element.value ? "CLOSED" : "OPEN" );
+        } else {
+          value = (element.value ? "ON" : "OFF" );
+        }
         break;
       case "BYTE":
         value = element.value.toString();
@@ -92,6 +94,9 @@ function prepareOpenhabUpdate(filter) {
     }
 
     ohUpdate.push(updItem);
+
+    element.changed = '0';
+    ohItems.update(element);
   });
 
   return ohUpdate;
@@ -146,7 +151,7 @@ function doLokiUpdate(plcData, curTime) {
   if (updItem[0].value != plcData.value) {
     updItem[0].value = plcData.value;
     updItem[0].checktime = curTime;
-    updItem[0].changed = true;
+    updItem[0].changed = '1';
 
     updValue = true;
   }
@@ -154,6 +159,7 @@ function doLokiUpdate(plcData, curTime) {
   // store a sample at least every 10min 
   if ((curTime - updItem[0].checktime) >= 600) {
     updItem[0].checktime = curTime;
+    updItem[0].changed = '1';
 
     updValue = true;
   }
@@ -167,21 +173,30 @@ function doLokiUpdate(plcData, curTime) {
   
   // perform the update in the in-memory loki-db
   ohItems.update(updItem[0]);
+
+  if (updItem[0].kind == 'BOOL') {
+    plcData.value = (plcData.value ? '1' : '0');
+  } else if (updItem[0].category == 'TEMP') {
+    plcData.value = (plcData.value / 10).toFixed(1)
+  } else {
+    plcData.value = plcData.value.toFixed(0);
+  }
  
   // if any update, pass back data to be stored in the influx database
   if (updValue || updHandle) {
     let influxData = {
       'measure' : updItem[0].influxdb,
       'item'    : updItem[0].item,
-      'value'   : 0,
+      'kind'    : updItem[0].kind,
+      'value'   : plcData.value,
       'handle'  : 0
     }
 
-    if (updValue) {
-      influxData.value = plcData.value;
-    }
+    //if (updValue) {
+    //  influxData.value = plcData.value;
+    //}
     if (updHandle) {
-      influxData.value = plcData.value;
+    //  influxData.value = plcData.value;
       influxData.handle = plcData.symhandle;
     }
     return influxData;
