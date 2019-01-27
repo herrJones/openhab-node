@@ -16,7 +16,7 @@ function prepareBeckhoffCategoryRequest(category) {
   allData.forEach(element => {
     let handle = {
       'symname'    : element.plc,
-     // 'symhandle'  : element.handle,
+      'symhandle'  : element.handle,
       'propname'   : 'value',
       'bytelength' : element.kind
     };
@@ -30,29 +30,38 @@ function prepareBeckhoffCategoryRequest(category) {
 function prepareBeckhoffItemRequest(item, value) {
   let thisData = ohItems.find({ 'item' : { '$eq' : item }});
 
-  let handle = {
-    'symname'    : thisData[0].plc,
-    //'symhandle'  : thisData.handle,
-    'propname'   : 'value',
-    'value'      : value,
-    'bytelength' : thisData[0].kind
-  };
+  if (thisData[0].value == value) {
+    return '';
+  } else {
+    let handle = {
+      'symname'    : thisData[0].plc,
+      'symhandle'  : thisData.handle,
+      'propname'   : 'value',
+      'value'      : value,
+      'bytelength' : thisData[0].kind
+    };
 
-  return handle;
+    return handle;
+  }
+  
 }
 
-function prepareOpenhabUpdate(filter) {
+function prepareOpenhabUpdate(refresh) {
   let ohUpdate = [];
 
   //let allData = ohItems.find({ 'category' : { '$in' : filter }});
   let unix10min = moment().add(-10, 'minutes').unix();
-
- // let allData = ohItems.find({ '$and' : [{ 'category' : { '$in' : filter }}, { 'openhab' : { '$eq' : 1 }},
- //                                        { '$or' : [{ 'changed' : { '$eq' : 1 }},  { 'checktime' : { '$gte' : unix10min }}]}
- //                                       ]
- //                             });
-  let allData = ohItems.find({ 'openhab' : { '$eq' : '1' }});
   
+  let allData = {};
+  if (refresh) {
+    allData = ohItems.find({ 'openhab' : { '$eq' : '1' }});
+  } else {
+    allData = ohItems.find({ '$and' : [{ 'openhab' : { '$eq' : '1' }},
+                                       { '$or' : [{ 'changed' : { '$eq' : '1' }},  { 'checktime' : { '$gte' : unix10min }}]}
+                                      ]
+                            });
+  }
+   
   if (allData.length == 0) {
     return "";
   }
@@ -60,15 +69,15 @@ function prepareOpenhabUpdate(filter) {
   allData.forEach(element => {
     let value = '';
 
-    if ((element.changed == '0') && (element.checktime > unix10min)) {
-      return;
-    }
+    //if ((element.changed == '0') && (element.checktime > unix10min)) {
+    //  return;
+    //}
     switch (element.kind) {
       case "BOOL":
         if (element.category == "ACCESS") {
-          value = (element.value ? "CLOSED" : "OPEN" );
+          value = (element.value == '1' ? "CLOSED" : "OPEN" );
         } else {
-          value = (element.value ? "ON" : "OFF" );
+          value = (element.value == '1' ? "ON" : "OFF" );
         }
         break;
       case "BYTE":
@@ -116,7 +125,7 @@ function sendOpenhabUpdate (data) {
     }
   }
 
-//  console.log(JSON.stringify(options));
+  console.log('send 2 OH : ' + data.item + ' --> ' + data.value);
 
   let req = http.request(options, function(res) {
     let result = '';
@@ -154,6 +163,8 @@ function doLokiUpdate(plcData, curTime) {
     updItem[0].changed = '1';
 
     updValue = true;
+
+  //  console.log('LOKI update : ' + updItem[0].item + ' (' + plcData.symname + ') --> ' + plcData.value);
   }
 
   // store a sample at least every 10min 
@@ -192,11 +203,7 @@ function doLokiUpdate(plcData, curTime) {
       'handle'  : 0
     }
 
-    //if (updValue) {
-    //  influxData.value = plcData.value;
-    //}
     if (updHandle) {
-    //  influxData.value = plcData.value;
       influxData.handle = plcData.symhandle;
     }
     return influxData;

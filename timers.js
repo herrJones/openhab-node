@@ -79,7 +79,6 @@ function initiateTimers() {
   });
 
   console.log('timer rules processed and ready...');
-  //setTimeout(processTimerQueue, 5000);
 
   return tmrQueue;
 }
