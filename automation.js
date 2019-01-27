@@ -1,10 +1,10 @@
 var express = require('express');
 var bodyParser = require('body-parser');
-//var http = require('http');
 var loki = require('lokijs');
 var schedule = require('node-schedule');
 var moment = require('moment');
 var csv = require('csvtojson');
+
 
 var timers = require('./timers');
 var openhab = require('./openhab');
@@ -23,6 +23,7 @@ var jobQueue = lokiDB.addCollection('jobs', { indices : ['isBusy']});
 var tmrQueue = lokiDB.addCollection('timers', { indices : ['time']});
 
 var jobBusy = false;
+var refreshAllData = true;
 
 function importCsvData(csvFile, collectionName) {
 
@@ -36,10 +37,11 @@ function importCsvData(csvFile, collectionName) {
 
 }
 
-// import van gegevens
+// import of data stored in CSV files
 importCsvData(__dirname + "/data/openhab.csv", openhab.ohItems);
 importCsvData(__dirname + "/data/timers.csv", timers.rules);
 
+// check the job queue every 125ms
 function processJobQueue() {
   setTimeout(processJobQueue, 125);
 
@@ -49,8 +51,10 @@ function processJobQueue() {
     return;
   }
 
+  // remove the first 'busy' job if it is no longer marked 'busy'
   jobQueue.findAndRemove({ 'isBusy' : { '$eq' : true }});
 
+  // search for a new job
   let todoList = jobQueue.find({ 'isBusy' : { '$eq' : false }}).sort();
 
   if (todoList.length == 0) {
@@ -63,6 +67,7 @@ function processJobQueue() {
 
   let curTime = moment().unix();
 
+  // preconfigured actions to perform
   if (todoList[0].target == 'OPENHAB' && todoList[0].action == 'GET') {
     // get values from OpenHAB
 
@@ -86,21 +91,28 @@ function processJobQueue() {
           jobBusy = false;
           return;
         }
-        data.forEach(element => {
-          let influxData = openhab.localUpdate(element, curTime);
+        try {
+          data.forEach(element => {
+            let influxData = openhab.localUpdate(element, curTime);
 
-          if (influxData != '') {
-            let scheduleJob = {
-              'target'   : 'INFLUX',
-              'action'   : 'SET',
-              'database' : todoList[0].database,
-              'data'     : influx.prepareUpdate(influxData),
-              'isBusy'   : false
+            if (influxData != '') {
+              let scheduleJob = {
+                'target'   : 'INFLUX',
+                'action'   : 'SET',
+                'database' : todoList[0].database,
+                'data'     : influx.prepareUpdate(influxData),
+                'isBusy'   : false
+              }
+              jobQueue.insertOne(scheduleJob);
             }
-            jobQueue.insertOne(scheduleJob);
-          }
-        });
-        jobBusy = false;
+          });
+        }
+        catch (exc) {
+          console.error('error processing GetPlcSymbols : ' + exc + ' - ' + data);
+        }
+        finally {
+          jobBusy = false;
+        }   
       });
     } else {
       beckhoff.getPlcSymbol(todoList[0].data, function (err, data)  {
@@ -109,21 +121,27 @@ function processJobQueue() {
           jobBusy = false;
           return;
         }
+        try {
+          let influxData = openhab.localUpdate(data, curTime);
 
-        let influxData = openhab.localUpdate(data, curTime);
-
-        if (influxData != '') {
-          let scheduleJob = {
-            'target'   : 'INFLUX',
-            'action'   : 'SET',
-            //'time'     : new Date().getTime(),
-            'database' : todoList[0].database,
-            'data'     : influx.prepareUpdate(influxData),
-            'isBusy'   : false
+          if (influxData != '') {
+            let scheduleJob = {
+              'target'   : 'INFLUX',
+              'action'   : 'SET',
+              //'time'     : new Date().getTime(),
+              'database' : todoList[0].database,
+              'data'     : influx.prepareUpdate(influxData),
+              'isBusy'   : false
+            }
+            jobQueue.insertOne(scheduleJob);
           }
-          jobQueue.insertOne(scheduleJob);
         }
-        jobBusy = false;
+        catch (ex) {
+          console.error('error processing GetPlcSymbol : ' + exc + ' - ' + data);
+        }
+        finally {
+          jobBusy = false;
+        }
       });
     }
   } else if (todoList[0].target == 'BECKHOFF' && todoList[0].action == 'SET') {
@@ -138,22 +156,29 @@ function processJobQueue() {
           return;
         }
 
-        data.forEach(element => {
-          let influxData = openhab.localUpdate(element, curTime);
+        try {
+          data.forEach(element => {
+            let influxData = openhab.localUpdate(element, curTime);
 
-          if (influxData != '') {
-            
-            let scheduleJob = {
-              'target'   : 'INFLUX',
-              'action'   : 'SET',
-              'database' : todoList[0].database,
-              'data'     : influx.prepareUpdate(influxData),
-              'isBusy'   : false
+            if (influxData != '') {
+              
+              let scheduleJob = {
+                'target'   : 'INFLUX',
+                'action'   : 'SET',
+                'database' : todoList[0].database,
+                'data'     : influx.prepareUpdate(influxData),
+                'isBusy'   : false
+              }
+              jobQueue.insertOne(scheduleJob);
             }
-            jobQueue.insertOne(scheduleJob);
-          }
-        });
-        jobBusy = false;
+          });
+        }
+        catch (exc) {
+          console.error('error processing setPlcSymbols : ' + exc + ' - ' + data);
+        }
+        finally {
+          jobBusy = false;
+        }
       });
     } else {
       beckhoff.setPlcSymbol(todoList[0].data, function (err, data) {
@@ -162,23 +187,29 @@ function processJobQueue() {
           console.warn('SET PLC : ' + err);
           return;
         }
-        let influxData = openhab.localUpdate(data, curTime);
 
-        if (influxData != '') {
+        try {
+          let influxData = openhab.localUpdate(data, curTime);
 
+          if (influxData != '') {
 
-          let scheduleJob = {
-            'target'   : 'INFLUX',
-            'action'   : 'SET',
-            //'time'     : new Date().getTime(),
-            'database' : todoList[0].database,
-            'data'     : influx.prepareUpdate(influxData),
-            'isBusy'   : false
+            let scheduleJob = {
+              'target'   : 'INFLUX',
+              'action'   : 'SET',
+              //'time'     : new Date().getTime(),
+              'database' : todoList[0].database,
+              'data'     : influx.prepareUpdate(influxData),
+              'isBusy'   : false
+            }
+            jobQueue.insertOne(scheduleJob);
           }
-          jobQueue.insertOne(scheduleJob);
         }
-
-        jobBusy = false;
+        catch (exc) {
+          console.error('error processing setPlcSymbol : ' + exc + ' - ' + data);
+        }
+        finally {
+          jobBusy = false;
+        }
       });
     }
   } else if (todoList[0].target == 'INFLUX' && todoList[0].action == 'GET') {
@@ -294,8 +325,7 @@ var check_5secs = schedule.scheduleJob('1-59/5 * * * * *', function() {
 // every 15 seconds
 var check_15secs = schedule.scheduleJob('3-59/15 * * * * *', function() {
 
- // let ohUpdates = openhab.getUpdates("'LICHT','ACCESS','SCREENS'");
-  let ohUpdates = openhab.getUpdates("none");
+  let ohUpdates = openhab.getUpdates(refreshAllData);
   if (ohUpdates != "") {
     scheduleJob = {
       'target' : 'OPENHAB',
@@ -305,17 +335,8 @@ var check_15secs = schedule.scheduleJob('3-59/15 * * * * *', function() {
     }
     jobQueue.insertOne(scheduleJob);
   }
+  refreshAllData = false;
 
-//  ohUpdates = openhab.getUpdates("'TEMP','LIGHT','WIND'");
-//  if (ohUpdates != "") {
-//    scheduleJob = {
-//      'target' : 'OPENHAB',
-//      'action' : 'SET',
-//      'data'   : ohUpdates,
-//      'isBusy' : false
-//    }
-//    jobQueue.insertOne(scheduleJob);
-//  }
 })
 
 // every minute
@@ -379,16 +400,10 @@ app.get('/getValues', function(req, res) {
   res.status(200).json(outbound).end();
 })
 
-app.get('/updateValues', function(req, res) {
-
-})
-
 app.get('/setPlcValue', function(req,res) {
   let itemName = req.query.var;
   let itemValue = req.query.state;
 
-  console.log('WEB - setPlcValue : ' + itemName + ' --> ' + itemValue);
-
   let scheduleJob = {
     'target'   : 'BECKHOFF',
     'action'   : 'SET',
@@ -396,93 +411,24 @@ app.get('/setPlcValue', function(req,res) {
     'data'     : openhab.getItem(itemName, itemValue),
     'isBusy'   : false
   }
-  jobQueue.insertOne(scheduleJob);
 
-  res.status(200).json({ result : 'update queued' }).end();
-})
-/*
-app.get('/setSwitch', function(req,res) {
-  let itemName = req.query.var;
-  let itemValue = req.query.state;
-
-  console.log('setSwitch : ' + itemName + ' --> ' + itemValue);
-
-  let scheduleJob = {
-    'target'   : 'BECKHOFF',
-    'action'   : 'SET',
-    'database' : 'openhab_db',
-    'data'     : openhab.getItem(itemName, itemValue),
-    'isBusy'   : false
+  if (scheduleJob.data != '') {
+    console.log('WEB - setPlcValue : ' + itemName + ' --> ' + itemValue);
+    jobQueue.insertOne(scheduleJob);
+    res.status(200).json({ result : 'update queued' }).end();
+  } else {
+    console.log('WEB - setPlcValue : no update required for ' + itemName + ' --> ' + itemValue);
+    res.status(400).json({ result : 'update queued' }).end();
   }
-  jobQueue.insertOne(scheduleJob);
-
-  res.status(200).json({ result : 'update queued' }).end();
+  
 })
 
-app.get('/setDimmer', function(req,res) {
-  let itemName = req.query.var;
-  let itemValue = req.query.state;
+app.get('/refreshData', function(req,res) {
 
-  console.log('setDimmer : ' + itemName + ' --> ' + itemValue);
+  console.log('WEB - refreshData')
+  refreshAllData = true;
 
-  let scheduleJob = {
-    'target'   : 'BECKHOFF',
-    'action'   : 'SET',
-    'database' : 'openhab_db',
-    'data'     : openhab.getItem(itemName, itemValue),
-    'isBusy'   : false
-  }
-  jobQueue.insertOne(scheduleJob);
-
-  res.status(200).json({ result : 'update queued' }).end();
-})
-
-app.get('/setScreenAuto', function(req,res) {
-  let itemName = req.query.var;
-  let itemValue = req.query.state;
-
-  console.log('setScreenAuto : ' + itemName + ' --> ' + itemValue);
-
-  let scheduleJob = {
-    'target'   : 'BECKHOFF',
-    'action'   : 'SET',
-    'database' : 'openhab_db',
-    'data'     : openhab.getItem(itemName, itemValue),
-    'isBusy'   : false
-  }
-  jobQueue.insertOne(scheduleJob);
-
-  res.status(200).json({ result : 'update queued' }).end();
-})
-
-app.get('/setScreenPos', function(req,res) {
-  let itemName = req.query.var;
-  let itemValue = req.query.state;
-
-  console.log('setScreenPos : ' + itemName + ' --> ' + itemValue);
-
-  let scheduleJob = {
-    'target'   : 'BECKHOFF',
-    'action'   : 'SET',
-    'database' : 'openhab_db',
-    'data'     : openhab.getItem(itemName, itemValue),
-    'isBusy'   : false
-  }
-  jobQueue.insertOne(scheduleJob);
-
-  res.status(200).json({ result : 'update queued' }).end();
-})
-*/
-
-app.get('/getJobQueue', function(req,res) {
-
-  let allData = jobQueue.find();
-  let outbound = {
-    'length' : allData.length,
-    'data' : allData
-  }
-
-  res.status(200).json(outbound).end();
+  res.status(200).end();
 })
 
 app.get('/getGinlong', function(req,res) {
@@ -508,9 +454,10 @@ app.get('/getGinlong', function(req,res) {
       let logTime = moment.unix(tmpData.results[0].series[0].values[0][0]);
       let difference = moment().diff(logTime, 'seconds');
 
-      //console.log('lastTime = ' + logTime.toString('') + ' - diff = ' + difference);
+      // log a line with '0'-data if last logged line was more than 1 hour ago
       if (difference >= 3600) {
         let e_today = 0;
+        // reset e_today to 0 for a new day
         if (logTime.isoWeekday() == moment().isoWeekday()) {
           e_today = tmpData.results[0].series[0].values[0][2];
         }
@@ -528,20 +475,16 @@ app.get('/getGinlong', function(req,res) {
           let scheduleJob = {
             'target'   : 'INFLUX',
             'action'   : 'SET',
-            //'time'     : new Date().getTime(),
             'database' : database,
             'data'     : influxData,
             'isBusy'   : false
           }
           jobQueue.insertOne(scheduleJob);
-        //sendInfluxUpdate('ginlong_db', influxData);
       }
     }
-    //console.log(JSON.stringify(data));
     res.status(200).json(outbound).end();
   });
 
- // res.status(200).json(outbound).end();
 });
 
 app.get('/setTimerSchema', function(req,res) {
@@ -595,5 +538,5 @@ process.on('uncaughtException', (err) => {
   jobBusy = false;
  // shutdown();
 });
-process.on('SIGKILL', shutdown);
+//process.on('SIGKILL', shutdown);
 process.on('SIGINT', shutdown);

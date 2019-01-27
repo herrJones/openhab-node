@@ -52,7 +52,17 @@ function setPlcSymbol(varData, callback) {
         }
       })
     })
-  })
+  });
+
+  client.on('error', function(err)  {
+    console.error("plc client error: " + err);
+    return callback("error", "");
+  });
+
+  client.on('timeout', function(err)  {
+    console.error("plc client timeout: " + err);
+    return callback("timeout", "");
+  });
 }
 
 function getPlcSymbol(varData, callback) {
@@ -83,11 +93,13 @@ function getPlcSymbol(varData, callback) {
 
   client.on('error', function(err)  {
     console.error("plc client error: " + err);
+    return callback("error", "");
   });
 
-  client.on('close', function() {
-    console.warn('close PLC connection after getSymbol for ' + varData.symname);
-  })
+  client.on('timeout', function(err)  {
+    console.error("plc client timeout: " + err);
+    return callback("timeout", "");
+  });
 }
 
 function setPlcSymbols(varData, callback) {
@@ -112,6 +124,7 @@ function setPlcSymbols(varData, callback) {
      this.multiWrite(varData, function(err) {
        if (err) {
          console.log('write error: ' + err);
+         return callback(err, "");
        }
        this.multiRead(varData, function(err, handles) {
          if (err) {
@@ -124,11 +137,20 @@ function setPlcSymbols(varData, callback) {
          }
        })
      })
-   })
+   });
+
+   client.on('error', function(err)  {
+    console.error("plc client error: " + err);
+    return callback("error", "");
+  });
+
+  client.on('timeout', function(err)  {
+    console.error("plc client timeout: " + err);
+    return callback("timeout", "");
+  });
 }
  
 function getPlcSymbols(varData, callback) {
-  //let handles = [];
 
   for (var i = 0; i < varData.length; i++) {
 
@@ -150,7 +172,7 @@ function getPlcSymbols(varData, callback) {
     this.multiRead(varData, function(err, handles) {
       if (err) {
         console.error('plc read error: ' + err);
-        return callback(err.message, "-1"); 
+        return callback(err.message, ""); 
       }
 
       return callback("", handles);
@@ -159,11 +181,13 @@ function getPlcSymbols(varData, callback) {
 
   client.on('error', function(err)  {
     console.error("plc client error: " + err);
+    return callback("error", "");
   });
 
-  client.on('close', function() {
-    console.warn('close PLC connection after getSymbol for ' + varData.symname);
-  })
+  client.on('timeout', function(err)  {
+    console.error("plc client timeout: " + err);
+    return callback("timeout", "");
+  });
   
 }
 
@@ -176,7 +200,17 @@ function getSymbols(data, callback) {
       console.log(JSON.stringify(symbols, null, 2))
       return callback("", symbols)
     })
-  })
+  });
+
+  client.on('error', function(err)  {
+    console.error("plc client error: " + err);
+    return callback("error", "");
+  });
+
+  client.on('timeout', function(err)  {
+    console.error("plc client timeout: " + err);
+    return callback("timeout", "");
+  });
 } 
 
 module.exports = {
